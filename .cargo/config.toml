@@ -1,0 +1,11 @@
+[build]
+target = "thumbv6m-none-eabi"
+
+[target.thumbv6m-none-eabi]
+linker = "rust-lld"
+rustflags = [
+  "-C", "link-arg=-Tlink.x",
+]
+
+[unstable]
+build-std = ["core", "compiler_builtins"]
