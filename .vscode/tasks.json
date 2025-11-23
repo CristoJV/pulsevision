@@ -4,22 +4,19 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build and Flash RP2040",
+            "label": "Build Debug RP2040",
             "type": "shell",
-            "command": "cargo clean && cargo build --release && elf2uf2-rs ./target/thumbv6m-none-eabi/release/pulsevision ./target/thumbv6m-none-eabi/release/pulsevision.uf2 && cp ./target/thumbv6m-none-eabi/release/pulsevision.uf2 /media/$USER/RPI-RP2/",
-            "problemMatcher": [],
-                "group": {
-                    "kind": "build",
-                    "isDefault": true
-                },
-                "presentation": {
-                    "echo": true,
-                    "reveal": "always",
-                    "focus": false,
-                    "panel": "shared",
-                    "showReuseMessage": true,
-                    "clear": false
-                }
+            "command": "cargo",
+            "args": [
+                "build",
+                "--target",
+                "thumbv6m-none-eabi"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$rustc"],
         }
     ]
 }

@@ -131,3 +131,16 @@ cargo build --release
 elf2uf2-rs target/thumbv6m-none-eabi/release/pulsevision pulsevision.uf2
 ```
 
+# Debugging with Rasbperry Pi Debug Probe
+
+Connect 3-pin to 3-pin debug cable
+Connect UART cables
+Install Probe-rs. This command will download, compile and install probe-rs, cargo-flash and cargo-embed.
+```shell
+cargo install probe-rs-tools --locked
+```
+Install flip-link linker wrapper. It detects subtle errors at linking.
+
+Install vscode extensions.
+- Rust Analyzer
+- probe-rs Debugger
