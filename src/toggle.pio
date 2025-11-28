@@ -1,0 +1,8 @@
+.program toggle
+.side_set 1 opt
+.define public MAX_DELAY 7
+
+.wrap_target
+set pindirs, 1 side 1 [MAX_DELAY]
+nop side 0 [MAX_DELAY]
+.wrap

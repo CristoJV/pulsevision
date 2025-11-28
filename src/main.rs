@@ -1,23 +1,25 @@
 #![no_std]      // Don't use the Rust standard library
 #![no_main]     // Don't use the normal main entry point provided by std
 
-use rp_pico::entry; 
-use rp_pico::hal::clocks::Clock;
+use rp_pico::entry;
+
 // Entry point macro for bare-metal programs
 use rp_pico::hal as hal;   // Import the HAL (Hardware Abstraction Layer)
+use hal::clocks::Clock;
 use hal::gpio::{FunctionPio0, Pin};
 use hal::pac;
 use hal::Sio;
-use hal::pio::PIOExt;
-
-// Import PIO crates
-use hal::pio::PIOBuilder;
-use pio::{Assembler, SetDestination};
+use hal::pio::{PIOExt, PIOBuilder};
+use pio::{Instruction, MovDestination, MovSource, SideSet};
+use hal::timer::Timer;
 
 use panic_probe as _; // Panic handler that simply halts the CPU
-use cortex_m;
 use defmt::*;
 use defmt_rtt as _;
+use libm::sinf;
+use pio_proc::pio_file;
+use embedded_hal::delay::DelayNs;
+
 
 fn config_pio_clock_divisor_for(pulse_freq: f32, pulse_cycles: u8, fsys: f32) -> (u16, u8){
     let divisor: f32 = fsys / ((pulse_cycles as f32) * pulse_freq);
@@ -28,8 +30,19 @@ fn config_pio_clock_divisor_for(pulse_freq: f32, pulse_cycles: u8, fsys: f32) ->
     debug!("Configured pulse freq={}", fsys / ((int as f32) + (frac as f32) /256.0) / (pulse_cycles as f32));
     return (int, frac)
 }
+
+const TABLE_SIZE: usize = 256;
+
+
+
 #[entry] // Marks the function that will run at startup
 fn main() -> ! {
+    let mut sine_table = [0u32; TABLE_SIZE];
+    for i in 0..TABLE_SIZE {
+        let angle = (i as f32) * core::f32::consts::TAU / TABLE_SIZE as f32;
+        let s = sinf(angle);
+        sine_table[i] = ((s * 0.5 + 0.5) * 31.0) as u32;
+    }
 
     // Peripherals::take() gives access to all hardware blocks (GPIO, clocks)
     let mut pac = pac::Peripherals::take().unwrap();
@@ -67,39 +80,33 @@ fn main() -> ! {
     // Get PIN id for use inside PIO
     let led_pin_id = led.id().num;
 
-    const MAX_DELAY: u8 = 31; // Total instruction time 1 + delay cycles
-    let mut ass = Assembler::<32>::new();
-    let mut wrap_target = ass.label();
-    let mut wrap_source = ass.label();
-    // Set pin as output
-    ass.set(SetDestination::PINDIRS, 1);
-    // Define begin of program loop
-    ass.bind(&mut wrap_target);
-    // Set pin low
-    ass.set_with_delay(SetDestination::PINS,0,MAX_DELAY);
-    // Set pin high
-    ass.set_with_delay(SetDestination::PINS,1,MAX_DELAY);
-    // Define end of program loop
-    ass.bind(&mut wrap_source);
-
-    let program = ass.assemble_with_wrap(wrap_source, wrap_target);
-
     // Initialize and start PIO
+    let program = pio_file!("src/toggle.pio");
     let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
-    let installed = pio.install(&program).unwrap();
+
+    let installed = pio.install(&program.program).unwrap();
     
     // PIO Clock divisor
     // FPIO = FSYS (125MHz) / (int + frac / 256)
     let fsys = clocks.system_clock.freq().to_Hz() as f32;
-    let (int, frac) = config_pio_clock_divisor_for(1_000.0,MAX_DELAY + 1,fsys);
+    let (int, frac) = config_pio_clock_divisor_for(100.0, 32,fsys);
 
-    let (sm, _, _) = PIOBuilder::from_installed_program(installed)
+    let (sm, _, mut tx) = PIOBuilder::from_installed_program(installed)
         .set_pins(led_pin_id, 1)
+        .side_set_pin_base(led_pin_id)
         .clock_divisor_fixed_point(int, frac)
         .build(sm0);
+    // tx.write(255);     // TX FIFO ← PERIOD
+    // let mov_isr_osr = Instruction::decode(0xA240, SideSet::new(false, 0, false)).unwrap();
+    // sm.exec_instruction(mov_isr_osr);
     sm.start();
- 
+    let mut timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
     loop {
-        cortex_m::asm::wfi();
+        for duty in 0..31{
+
+        // for &duty in sine_table.iter() {
+            tx.write(duty as u32);
+            timer.delay_ns(39000_000);
+        }
     }
 }
