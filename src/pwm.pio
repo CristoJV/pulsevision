@@ -1,0 +1,56 @@
+; Instructions set (version 0, RP2040) 
+; 
+; link: https://pip-assets.raspberrypi.com/categories/610-raspberry-pi-pico/documents/RP-008354-DS-1-raspberry-pi-pico-c-sdk.pdf?disposition=inline
+; 
+; - jmp: set program counter to address if condition is true
+;   - conditions: always, !x (is zero), x-- (non zero prior to decrement), y!, y--, x!=y (x not equal y), pin (branch on input pin), !osre (osr not empty)
+; - wait: stall until condition is met. polarity (0, 1), source (gpio, pin, irq,)
+; - in: shift bit count bits from source into isr. source (pins, x, y, null, isr, osr), bit count (0..32 bits)
+; - out: shift bit count bits from osr to destination. destionation (pins, x, y, null, pindirs, pc, isr, exec), bit count (0..32 bits)
+; - push: push contents of the isr to the rx fifo, as 32-bit word and clears isr to all-zeroes. iffull do nothing, block, stall execution if rx fifo is full.
+; - pull: load a 32-bit word from the tx fifo into de osr. ifempty do nothing, block, stall if tx fifo is empty.
+; * A nonblocking pull on an empty FIFO has the same effect as MOV OSR, X
+; - mov: 
+; - irq:
+; - set:
+; 
+; Directives:
+; .define (PUBLIC) <symbol> <value> : define an integer symbol
+; .program <name>: start a new program
+; .side_set <count> (opt) (pindirs): <count> indicates de number of side-set bits to be used.
+; .set <count>: <count> indicates the number of set bits to be used
+; .wrap_target: start of the program wrapping
+; .wrap: end of the program wrapping
+
+; -------------------------------------------------------
+; PWM deterministic generator with dynamic duty via TX fifo
+; - X holds duty value,
+; - Y holds period (loaded from ISR)
+; - Each iteration of pwm_loop takes exactly 4 PIO cycles:
+; - The signal is HIGH while Y > X, LOW when Y <= X
+; * There is always one forced LOW cycle at the start of each period
+; * To mantain exact timing, define PERIOD one count smaller (PERIOD -1)
+; * to compensate for the extra LOW cycle.
+; * Because of this forced LOW, the maximum duty cycle (100%) cannot be reached;
+; * The highest possible output is one cycle short of full HIGH.
+
+.program pwm
+
+.side_set 1 opt ; optional side_set pin. Fastest.
+.define PERIOD 31 ; PERIOD is one count smaller
+
+.wrap_target
+                        ; 
+set pindirs, 1 side 0   ;
+pull noblock            ; if the FIFO is empty (MOV OSR, X)
+mov x, osr              ; copy osr pulled value to scratch X
+mov y, isr              ;
+
+pwm_loop:
+    jmp x!=y noset      ; Continue with previous pin state
+    jmp skip side 1     ; Set pin to HIGH
+noset:                     
+    nop [1]             ; Because of set pindirs
+skip:                    
+    jmp y-- pwm_loop
+.wrap

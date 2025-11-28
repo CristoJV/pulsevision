@@ -17,7 +17,7 @@ use panic_probe as _; // Panic handler that simply halts the CPU
 use defmt::*;
 use defmt_rtt as _;
 use libm::sinf;
-use pio_proc::pio_file;
+use pio_proc::{pio_file, pio_asm};
 use embedded_hal::delay::DelayNs;
 
 
@@ -31,19 +31,21 @@ fn config_pio_clock_divisor_for(pulse_freq: f32, pulse_cycles: u8, fsys: f32) ->
     return (int, frac)
 }
 
+
+fn generate_sine_table<const N: usize>() -> [u32; N] {
+    let mut table = [0u32; N];
+    for i in 0..N {
+        let angle = (i as f32) * core::f32::consts::TAU / N as f32;
+        let s = sinf(angle);
+        table[i] = ((s * 0.5 + 0.5) * (N as f32 - 1.0)) as u32;
+    }
+    table
+}
+
 const TABLE_SIZE: usize = 256;
-
-
 
 #[entry] // Marks the function that will run at startup
 fn main() -> ! {
-    let mut sine_table = [0u32; TABLE_SIZE];
-    for i in 0..TABLE_SIZE {
-        let angle = (i as f32) * core::f32::consts::TAU / TABLE_SIZE as f32;
-        let s = sinf(angle);
-        sine_table[i] = ((s * 0.5 + 0.5) * 31.0) as u32;
-    }
-
     // Peripherals::take() gives access to all hardware blocks (GPIO, clocks)
     let mut pac = pac::Peripherals::take().unwrap();
     let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
@@ -81,7 +83,7 @@ fn main() -> ! {
     let led_pin_id = led.id().num;
 
     // Initialize and start PIO
-    let program = pio_file!("src/toggle.pio");
+    let program = pio_file!("src/pwm.pio");
     let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
 
     let installed = pio.install(&program.program).unwrap();
@@ -89,22 +91,29 @@ fn main() -> ! {
     // PIO Clock divisor
     // FPIO = FSYS (125MHz) / (int + frac / 256)
     let fsys = clocks.system_clock.freq().to_Hz() as f32;
-    let (int, frac) = config_pio_clock_divisor_for(100.0, 32,fsys);
+    let (int, frac) = config_pio_clock_divisor_for(10_000.0, 32,fsys);
 
-    let (sm, _, mut tx) = PIOBuilder::from_installed_program(installed)
+    let (mut sm, _, mut tx) = PIOBuilder::from_installed_program(installed)
         .set_pins(led_pin_id, 1)
         .side_set_pin_base(led_pin_id)
         .clock_divisor_fixed_point(int, frac)
         .build(sm0);
-    // tx.write(255);     // TX FIFO ← PERIOD
-    // let mov_isr_osr = Instruction::decode(0xA240, SideSet::new(false, 0, false)).unwrap();
-    // sm.exec_instruction(mov_isr_osr);
-    sm.start();
-    let mut timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
-    loop {
-        for duty in 0..31{
 
-        // for &duty in sine_table.iter() {
+    let period: u32 = (TABLE_SIZE as u32) -1;
+    tx.write(period);     // TX FIFO ← PERIOD
+    let pull = pio_asm!("pull noblock","out isr, 32").program;
+    let pull_instr = Instruction::decode(pull.code[0], SideSet::new(false, 0, false)).unwrap();
+    let mov_isr_osr = Instruction::decode(pull.code[1], SideSet::new(false, 0, false)).unwrap();
+    sm.exec_instruction(pull_instr);
+    sm.exec_instruction(mov_isr_osr);
+    
+    sm.start();
+
+    let mut timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
+    let mut sine_table = generate_sine_table::<TABLE_SIZE>();
+    loop {
+        // for duty in 0..31 {
+        for &duty in sine_table.iter() {
             tx.write(duty as u32);
             timer.delay_ns(39000_000);
         }
