@@ -38,7 +38,7 @@
 
 .wrap_target
                         
-pull noblock            ; if the FIFO is empty (MOV OSR, X)
+pull noblock side 0     ; if the FIFO is empty (MOV OSR, X)
 mov x, osr              ; copy osr pulled value to scratch X
 mov y, isr              ;
 

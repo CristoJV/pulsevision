@@ -3,14 +3,15 @@
 
 use rp_pico::entry;
 
+use rp_pico::hal::pio::ValidStateMachine;
 // Entry point macro for bare-metal programs
 use rp_pico::hal as hal;   // Import the HAL (Hardware Abstraction Layer)
 use hal::clocks::Clock;
 use hal::gpio::{FunctionPio0, Pin};
 use hal::pac;
 use hal::Sio;
-use hal::pio::{PIOExt, PIOBuilder};
-use pio::{Instruction, MovDestination, MovSource, SideSet};
+use hal::pio::{PIOExt, PIOBuilder, StateMachine, Tx, Stopped};
+use pio::{Instruction, SideSet};
 use hal::timer::Timer;
 
 use panic_probe as _; // Panic handler that simply halts the CPU
@@ -40,6 +41,22 @@ fn generate_sine_table<const N: usize>() -> [u32; N] {
         table[i] = ((s * 0.5 + 0.5) * (N as f32 - 1.0)) as u32;
     }
     table
+}
+
+fn pio_set_pindirs<SM: ValidStateMachine>(sm: &mut StateMachine<SM, Stopped>, tx:&mut Tx<SM>){
+    let instructions = pio_asm!("set pindirs, 1").program;
+    sm.exec_instruction(Instruction::decode(instructions.code[0], SideSet::new(false, 0, false)).unwrap());
+}
+
+
+
+fn pio_load_pwm_cycles<SM: ValidStateMachine>(sm: &mut StateMachine<SM, Stopped>, tx:&mut Tx<SM>, n_cycles: u32){
+    let instructions = pio_asm!("pull noblock","out isr, 32").program;
+    tx.write(n_cycles);
+    for &code in instructions.code.iter(){
+        let instr: Instruction = Instruction::decode(code, SideSet::new(false, 0, false)).unwrap();
+        sm.exec_instruction(instr);
+    }
 }
 
 const TABLE_SIZE: usize = 256;
@@ -99,16 +116,10 @@ fn main() -> ! {
         .clock_divisor_fixed_point(int, frac)
         .build(sm0);
 
-    let period: u32 = (TABLE_SIZE as u32) -1;
-    tx.write(period);     // TX FIFO ← PERIOD
-    let configure_instructions = pio_asm!("set pindirs, 1", "pull noblock","out isr, 32").program;
-    let set_pindirs = Instruction::decode(configure_instructions.code[0], SideSet::new(false, 0, false)).unwrap();
-    let pull_instr = Instruction::decode(configure_instructions.code[1], SideSet::new(false, 0, false)).unwrap();
-    let mov_isr_osr = Instruction::decode(configure_instructions.code[2], SideSet::new(false, 0, false)).unwrap();
-    sm.exec_instruction(set_pindirs);
-    sm.exec_instruction(pull_instr);
-    sm.exec_instruction(mov_isr_osr);
-    
+    let n_cycles: u32 = (TABLE_SIZE as u32) -1;
+    pio_set_pindirs(&mut sm, &mut tx);
+    pio_load_pwm_cycles(&mut sm, &mut tx, n_cycles);
+
     sm.start();
 
     let mut timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
