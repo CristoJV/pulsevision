@@ -10,9 +10,6 @@
 ; - push: push contents of the isr to the rx fifo, as 32-bit word and clears isr to all-zeroes. iffull do nothing, block, stall execution if rx fifo is full.
 ; - pull: load a 32-bit word from the tx fifo into de osr. ifempty do nothing, block, stall if tx fifo is empty.
 ; * A nonblocking pull on an empty FIFO has the same effect as MOV OSR, X
-; - mov: 
-; - irq:
-; - set:
 ; 
 ; Directives:
 ; .define (PUBLIC) <symbol> <value> : define an integer symbol
@@ -36,12 +33,11 @@
 
 .program pwm
 
-.side_set 1 opt ; optional side_set pin. Fastest.
-.define PERIOD 31 ; PERIOD is one count smaller
+.side_set 1 opt         ; optional side_set pin.
+                        ; Steals one of each instruction delay bits to drive some pins.
 
 .wrap_target
-                        ; 
-set pindirs, 1 side 0   ;
+                        
 pull noblock            ; if the FIFO is empty (MOV OSR, X)
 mov x, osr              ; copy osr pulled value to scratch X
 mov y, isr              ;

@@ -101,9 +101,11 @@ fn main() -> ! {
 
     let period: u32 = (TABLE_SIZE as u32) -1;
     tx.write(period);     // TX FIFO ← PERIOD
-    let pull = pio_asm!("pull noblock","out isr, 32").program;
-    let pull_instr = Instruction::decode(pull.code[0], SideSet::new(false, 0, false)).unwrap();
-    let mov_isr_osr = Instruction::decode(pull.code[1], SideSet::new(false, 0, false)).unwrap();
+    let configure_instructions = pio_asm!("set pindirs, 1", "pull noblock","out isr, 32").program;
+    let set_pindirs = Instruction::decode(configure_instructions.code[0], SideSet::new(false, 0, false)).unwrap();
+    let pull_instr = Instruction::decode(configure_instructions.code[1], SideSet::new(false, 0, false)).unwrap();
+    let mov_isr_osr = Instruction::decode(configure_instructions.code[2], SideSet::new(false, 0, false)).unwrap();
+    sm.exec_instruction(set_pindirs);
     sm.exec_instruction(pull_instr);
     sm.exec_instruction(mov_isr_osr);
     
