@@ -1,0 +1,25 @@
+{
+    // Activa el formateo automático al guardar
+    "editor.formatOnSave": true,
+
+    // Usa rust-analyzer como formateador por defecto
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
+        "editor.formatOnSave": true,
+        "editor.rulers": [88]
+    },
+
+    // Asegúrate de que rust-analyzer está activado
+    "rust-analyzer.checkOnSave.command": "clippy",  // Usa Clippy en lugar de 'check'
+    "rust-analyzer.rustfmt.enableRangeFormatting": true,
+
+    // Opcional: muestra errores/lints mientras escribes
+    "rust-analyzer.diagnostics.enable": true,
+
+    // Formato de salida preferido (por si usas Prettier u otros)
+    "editor.formatOnType": true,
+
+    // Si usas Cargo workspaces, activa este modo
+    "rust-analyzer.cargo.allFeatures": true,
+    "rust-analyzer.cargo.loadOutDirsFromCheck": true
+}

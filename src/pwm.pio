@@ -26,27 +26,35 @@
 ; - Each iteration of pwm_loop takes exactly 4 PIO cycles:
 ; - The signal is HIGH while Y > X, LOW when Y <= X
 ; * There is always one forced LOW cycle at the start of each period
-; * To mantain exact timing, define PERIOD one count smaller (PERIOD -1)
+; * To mantain exact timing, define PERIOD one count smaller (PERIOD - 2)
 ; * to compensate for the extra LOW cycle.
 ; * Because of this forced LOW, the maximum duty cycle (100%) cannot be reached;
 ; * The highest possible output is one cycle short of full HIGH.
 
 .program pwm
 
-.side_set 1 opt         ; optional side_set pin.
-                        ; Steals one of each instruction delay bits to drive some pins.
+.side_set 1 opt                     ; optional side_set pin.
+                                    ; Steals one of each instruction delay bits to drive some pins.
 
 .wrap_target
-                        
-pull noblock side 0     ; if the FIFO is empty (MOV OSR, X)
-mov x, osr              ; copy osr pulled value to scratch X
-mov y, isr              ;
+
+jmp pin update_duty side 0 [1]      ; syncronization pin. delay set to 1 to keep 6 initialization cycles
+jmp continue_duty [2]               ; to keep aligment
+
+update_duty:
+    set pins, 0
+    pull noblock                    ; if the FIFO is empty (MOV OSR, X)
+    mov x, osr                      ; copy osr pulled value to scratch X
+
+continue_duty:    
+    mov y, isr                      ;
 
 pwm_loop:
-    jmp x!=y noset      ; Continue with previous pin state
-    jmp skip side 1     ; Set pin to HIGH
+    jmp x!=y noset                  ; Continue with previous pin state
+    jmp skip side 1                 ; Set pin to HIGH
 noset:                     
-    nop [1]             ; Because of set pindirs
+    nop [1]                         ; Because of set pindirs
 skip:                    
     jmp y-- pwm_loop
+
 .wrap
